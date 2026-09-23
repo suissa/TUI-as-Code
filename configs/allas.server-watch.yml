@@ -1,0 +1,252 @@
+version: 1
+
+dashboard:
+  id: server-watch
+  title: AllasCode Server Watch
+  refresh: 100ms
+
+  retention:
+    max_events: 10000
+    max_age: 5m
+
+  failure_window:
+    before: 30s
+    after: 10s
+
+sources:
+  runtime:
+    channel: stdio
+    mode: ndjson
+    listen:
+      - Runtime.*
+      - Agent.*.Error
+      - Action.*.Error
+
+  distributed:
+    channel: nats
+    connection: runtime
+    listen:
+      - Metrics.>
+      - Logs.>
+      - Traces.>
+
+layout:
+  type: responsive
+
+  breakpoints:
+    compact: 0
+    medium: 120
+    wide: 180
+
+  compact:
+    type: flex
+    direction: column
+    children:
+      - metrics
+      - logs
+      - traces
+      - failures
+
+  medium:
+    type: grid
+    columns: 2
+    children:
+      - metrics
+      - logs
+      - traces
+      - failures
+
+  wide:
+    type: grid
+    columns: 3
+    rows:
+      - [metrics, logs, traces]
+      - [failures, failures, failures]
+
+header:
+  fixed: true
+  component: box
+  style:
+    background: blue
+    foreground: white
+
+  content:
+    component: flex
+    direction: row
+    justify: space-between
+
+    children:
+      - component: label_value
+        label: Runtime
+        value:
+          source: runtime
+          event: Runtime.Info
+          path: payload.version
+
+      - component: label_value
+        label: Mode
+        value:
+          source: runtime
+          event: Runtime.Info
+          path: payload.mode
+
+      - component: label_value
+        label: Workers
+        value:
+          source: runtime
+          event: Runtime.Info
+          path: payload.workers
+
+blocks:
+  - id: metrics
+    title: METRICS
+    source: distributed
+    component: metric_grid
+
+    listen:
+      - Metrics.>
+
+    style:
+      header:
+        background: yellow
+        foreground: black
+
+    values:
+      - label: Requests/s
+        event: Metrics.Request
+        path: payload.value
+        aggregate:
+          type: rate
+          window: 10s
+        component: counter
+
+      - label: P95
+        event: Metrics.Latency
+        path: payload.duration
+        aggregate:
+          type: percentile
+          value: 95
+          window: 60s
+        format:
+          type: duration
+        component: counter
+
+      - label: Errors/s
+        event: Metrics.Error
+        aggregate:
+          type: rate
+          window: 10s
+        component: counter
+
+  - id: logs
+    title: LOGS
+    source: distributed
+    component: log_view
+
+    listen:
+      - Logs.>
+
+    retention:
+      max_events: 1000
+
+    style:
+      header:
+        background: yellow
+        foreground: black
+
+    fields:
+      - label: Level
+        path: payload.level
+      - label: Action
+        path: payload.action
+      - label: Message
+        path: payload.message
+
+  - id: traces
+    title: TRACES
+    source: distributed
+    component: trace_tree
+
+    listen:
+      - Traces.>
+
+    style:
+      header:
+        background: yellow
+        foreground: black
+
+    fields:
+      - label: Span
+        path: payload.name
+      - label: Duration
+        path: payload.duration
+      - label: Status
+        path: payload.status
+
+  - id: failures
+    title: FAILURES
+    source: runtime
+    component: failure_panel
+
+    listen:
+      - Agent.*.Error
+      - Action.*.Error
+
+    style:
+      header:
+        background: red
+        foreground: white
+
+    fields:
+      - label: Label
+        path: label
+      - label: Expected
+        path: payload.expected
+      - label: Received
+        path: payload.received
+      - label: Invariant
+        path: payload.invariant
+      - label: Trace
+        path: trace_id
+
+progress:
+  fixed: true
+  component: animated_progress
+
+  value:
+    source: runtime
+    event: Runtime.Progress
+    path: payload.percent
+
+footer:
+  fixed: true
+  component: box
+
+  style:
+    background: blue
+    foreground: white
+
+  actions:
+    - key: enter
+      label: details
+      action: details
+
+    - key: f
+      label: filter
+      action: filter
+
+    - key: e
+      label: errors
+      action: errors
+
+    - key: t
+      label: trace
+      action: trace
+
+    - key: p
+      label: pause
+      action: pause
+
+    - key: q
+      label: quit
+      action: quit
